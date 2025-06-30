@@ -14,17 +14,19 @@ def generate_sin_traj(T):
         amp2 * np.cos(0.05 * t + phase2)]) for t in time_steps]
 
 
-def generate_spline_traj(T, dt=1, num_waypoints=4, scale=1.0, seed=None):
-    if seed is not None:
-        np.random.seed(seed)
+def generate_spline_traj(T):
+    num_waypoints = 3
+    dt = 1
+
     T = T +1
+
     total_time = T * dt
     time_steps = np.linspace(0, total_time, T)
 
     waypoint_times = np.linspace(0, total_time, num_waypoints)
 
-    waypoints_x = np.random.randn(num_waypoints) * scale
-    waypoints_y = np.random.randn(num_waypoints) * scale
+    waypoints_x = np.random.randn(num_waypoints)
+    waypoints_y = np.random.randn(num_waypoints)
 
     spline_x = CubicSpline(waypoint_times, waypoints_x)
     spline_y = CubicSpline(waypoint_times, waypoints_y)

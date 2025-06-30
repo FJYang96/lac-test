@@ -18,7 +18,7 @@ class LinearSystem(gym.Env):
         self.A = A
         self.B = B
 
-        self.T = T  # seconds
+        self.T = T  # seconds / time horizon
         self.t = 0  # start time
 
         self.x = self.x0

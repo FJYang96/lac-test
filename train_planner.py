@@ -1,33 +1,34 @@
-import numpy as np
+from env import *
+from utils import *
+from controllers.linear_lqr import *
+import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from scipy.optimize import minimize
 from tracking import *
 import joblib
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
-from tensorflow.keras.models import load_model
-from tensorflow.keras.models import save_model
-from env import *
-from utils import *
-from controllers import *
-import matplotlib.pyplot as plt
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
 
 
 def collect_rollouts(A, B, Q, R, T, num_rollouts=100):
     ref_traj_list = []
     cumulative_costs = []
-    env = LinearSystem(A, B, T)
 
-    for _ in range(num_rollouts):
-        ref_traj = generate_sin_traj(T)
+    for i in range(num_rollouts):
+        print(i)
+        env = LinearSystem(A, B, T)
+        ref_traj = None
         controller = FiniteHorizonLQR(env, Q, R, ref_traj)
-        traj, u_list, cost_list = controller.simulate(env.x0)
+        traj, u_list, cost_list = controller.simulate()
 
         cumulative_costs.append(np.sum(cost_list))
-        ref_traj_list.append(ref_traj)
+        ref_traj_list.append(controller.ref_traj)
+        if i % 100 == 0:
+            controller.plot_results(traj, u_list, cost_list)
 
-    controller.plot_results(traj, u_list, cost_list)
-    np.savez('rollout_data_1.npz', refs=ref_traj_list, costs=cumulative_costs)
+    np.savez('rollout_data_new_ref.npz', refs=ref_traj_list, costs=cumulative_costs)
     return np.array(ref_traj_list), np.array(cumulative_costs)
 
 
@@ -91,7 +92,7 @@ def plot_testing_quad(reg, env, Q, R, num_tests=50):
     for i in range(num_tests):
         ref_traj = generate_sin_traj(T)
         controller = FiniteHorizonLQR(env, Q, R, ref_traj)
-        traj, _, cost_list = controller.simulate(env.x0)
+        traj, _, cost_list = controller.simulate()
 
         true_cost = np.sum(cost_list)
         flat_ref = np.array(ref_traj).flatten()[None]
@@ -240,16 +241,25 @@ def optimize_trajectory_cem(model, T, n, model_type='quad', num_samples=100, eli
     return mu.reshape((T + 1, n))
 
 
-A = np.array([[2.0, 3], [0, 2.0]])
-B = np.array([[0],
-              [1]])
+# A = np.array([[2.0, 3], [0, 2.0]])
+# B = np.array([[0],
+#               [1]])
+#
+# Q = np.array([[10.1, 0],
+#               [0, 10.5]])
+# R = 0.1 * np.eye(1)
+# T = 100
+# n = A.shape[0]
+# env = LinearSystem(A, B, T)
 
-Q = np.array([[10.1, 0],
-              [0, 10.5]])
-R = 0.1 * np.eye(1)
-T = 100
-n = A.shape[0]
+A = np.array([[1, 1], [0, 1]])
+B = np.array([[0], [1]])
+Q = np.eye(2)
+R = np.eye(1)
+Qf = np.eye(2)  # terminal cost (can also try np.eye(2))
+T = 20
 env = LinearSystem(A, B, T)
+
 
 ### COLLECTING ROLLOUTS ###
 
@@ -259,6 +269,7 @@ if load_data:
     data = np.load('rollout_data_1.npz', allow_pickle=True)
     ref_traj_list = data['refs']
     cumulative_costs = data['costs']
+    print(ref_traj_list)
 else:
     ref_traj_list, cumulative_costs = collect_rollouts(A, B, Q, R, T,
                                                        num_rollouts=1000)
@@ -288,11 +299,11 @@ plot_testing_nn(nn_model, env, Q, R, T, num_tests=50)
 
 ### GENERATE NEW TRAJECTORIES ###
 
-r_init = np.array(generate_sin_traj(T))
-traj_gd = optimize_trajectory_gradient_descent(quadratic_model, r_init, T, n, model_type='quad')
-traj_cem = optimize_trajectory_cem(quadratic_model, T, n, model_type='quad')
-simulate_linear_aug_lqr(A, B, Q, R, T, traj_cem)
-
-traj_gd_nn = optimize_trajectory_gradient_descent(nn_model, r_init, T, n, model_type='nn')
-traj_cem_nn = optimize_trajectory_cem(nn_model, T, n, model_type='nn')
-simulate_linear_aug_lqr(A, B, Q, R, T, traj_cem_nn)
+# r_init = np.array(generate_sin_traj(T))
+# traj_gd = optimize_trajectory_gradient_descent(quadratic_model, r_init, T, n, model_type='quad')
+# traj_cem = optimize_trajectory_cem(quadratic_model, T, n, model_type='quad')
+# simulate_linear_aug_lqr(A, B, Q, R, T, traj_cem)
+#
+# traj_gd_nn = optimize_trajectory_gradient_descent(nn_model, r_init, T, n, model_type='nn')
+# traj_cem_nn = optimize_trajectory_cem(nn_model, T, n, model_type='nn')
+# simulate_linear_aug_lqr(A, B, Q, R, T, traj_cem_nn)
