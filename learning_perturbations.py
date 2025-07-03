@@ -1,11 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import cvxpy as cp
-from utils import generate_traj
-
 
 def solve_r(A, B, Q, R, T, xi, nu):
-    # Solve eq (2)
 
     n = A.shape[0]
 
@@ -69,7 +66,7 @@ def solve_xu(A, B, Q, R, T, xi, r_plus_nu, rho=1.0):
     return x.value, u.value, problem.value
 
 
-def dual_ascent_algorithm_cvxpy(A, B, Q, R, T, xi, max_iterations=25, rho=1.0):
+def dual_ascent(A, B, Q, R, T, xi, max_iterations=25, rho=1.0):
     n = A.shape[0]
 
     nu = np.zeros((T, n))
@@ -86,17 +83,15 @@ def dual_ascent_algorithm_cvxpy(A, B, Q, R, T, xi, max_iterations=25, rho=1.0):
     }
 
     for k in range(max_iterations):
-        # Step 1: Solve r-subproblem (equation 2) using CVXPy
         r_plus = solve_r(A, B, Q, R, T, xi, nu)
 
         if r_plus is None:
             print(f"✗ r-subproblem failed at iteration {k}")
             break
 
-        # Step 2: Solve (x,u)-subproblem (equation 3) using CVXPy
-        # Create perturbed reference (r + ν)
+
         r_plus_nu = r_plus.copy()
-        r_plus_nu[:-1] += nu  # Add perturbation to executable part
+        r_plus_nu[:-1] += nu
 
         x_plus, u_plus, obj_value = solve_xu(A, B, Q, R, T,
                                                               xi, r_plus_nu,

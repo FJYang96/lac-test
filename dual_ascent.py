@@ -1,6 +1,6 @@
 import cvxpy as cp
 import pandas as pd
-from older_files.classical_controllers import *
+from controllers.linear_lqr import *
 from env import *
 
 def dual_ascent(A, B, Q, R, rho, T, xi, X_bounds, U_bounds, nu_init, max_iters=10):

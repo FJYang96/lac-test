@@ -7,7 +7,9 @@ from tensorflow.keras.optimizers import Adam
 import cvxpy as cp
 from env import LinearSystem
 from utils import generate_spline_traj
-from controllers import FiniteHorizonLQR
+from controllers.linear_lqr import FiniteHorizonLQR
+import matplotlib.pyplot as plt
+
 
 def solve_r_subproblem_cvxpy(A, B, Q, R, T, x_traj, nu):
     n = A.shape[0]
@@ -24,7 +26,6 @@ def solve_r_subproblem_cvxpy(A, B, Q, R, T, x_traj, nu):
 
     return r.value
 
-# --- Dual Ascent Algorithm ---
 def dual_ascent(env, Q, R, rho, xi, r_init, max_iters=8):
     n, T = env.state_space, env.T
     r = r_init.copy()
@@ -35,12 +36,11 @@ def dual_ascent(env, Q, R, rho, xi, r_init, max_iters=8):
         print(nu.shape)
         r_perturbed = r + nu
         controller = FiniteHorizonLQR(env, Q, R, r_perturbed)
-        x_traj, u_traj, _ = controller.simulate(xi)
+        x_traj, u_traj, _ = controller.simulate()
 
         r = solve_r_subproblem_cvxpy(env.A, env.B, Q, R, T, x_traj, nu)
 
-        # nu = nu[:T] + rho * (x_crop - r[:T])
-        # print(nu.shape)
+
         nu = nu + rho * (x_traj - r)
 
         trajs.append(x_traj.copy())
@@ -49,16 +49,19 @@ def dual_ascent(env, Q, R, rho, xi, r_init, max_iters=8):
 
     return trajs, rs, nus
 
-def dual_ascent_with_model(env, Q, R, rho, xi, r_init, model, max_iters=20):
+def dual_ascent_with_model(A, B, Q, R, T, rho, model, max_iters=10):
+    env = LinearSystem(A,B, T)
     n, T = env.state_space, env.T
-    r = r_init.copy()
-    nu = model.predict(r.flatten()[None])[0].reshape(T + 1, n)  # warm start
+    # r = r_init.copy()
     trajs, nus, rs = [], [], []
 
     for i in range(max_iters):
+        controller = FiniteHorizonLQR(env, Q, R)
+        r = controller.ref_traj
+        nu = model.predict(r.flatten()[None])[0].reshape(T + 1, n)
         r_perturbed = r + nu
-        controller = FiniteHorizonLQR(env, Q, R, r_perturbed)
-        x_traj, u_traj, _ = controller.simulate(xi)
+
+        x_traj, u_traj, _ = controller.simulate()
 
         r = solve_r_subproblem_cvxpy(env.A, env.B, Q, R, T, x_traj, nu)
         x_crop = x_traj[:T] if x_traj.shape[0] > T else x_traj[:T]
@@ -81,12 +84,15 @@ def dual_ascent_with_model(env, Q, R, rho, xi, r_init, model, max_iters=20):
 
     return trajs, rs, nus
 
-def generate_dual_data(env, Q, R, rho, num_samples=1000, max_iters=20):
+def generate_dual_data(env, Q, R, rho, num_samples=1000, max_iters=10):
     r_list = []
     nu_star_list = []
 
     for _ in range(num_samples):
-        r_init = generate_spline_traj(env.T)  # shape (T+1, n)
+        controller = FiniteHorizonLQR(env, Q, R)
+        r_init = controller.ref_traj
+
+        # r_init =   # shape (T+1, n)
         trajs, rs, nus = dual_ascent(env, Q, R, rho, env.x0, r_init, max_iters)
 
         r_final = rs[-1].flatten()
@@ -107,7 +113,8 @@ def build_dual_network(input_dim):
     model.compile(optimizer=Adam(1e-3), loss='mse')
     return model
 
-def train_dual_network(env, Q, R, rho=1.0, num_samples=1000):
+def train_dual_network(A, B, Q, R, T, rho=1.0, num_samples=1000):
+    env = LinearSystem(A, B, T)
     r_data, nu_data = generate_dual_data(env, Q, R, rho, num_samples)
     X_train, X_val, y_train, y_val = train_test_split(r_data, nu_data, test_size=0.1)
 
@@ -115,11 +122,9 @@ def train_dual_network(env, Q, R, rho=1.0, num_samples=1000):
     model.fit(X_train, y_train, epochs=100, batch_size=32,
               validation_data=(X_val, y_val))
 
-    # Evaluate model
     loss = model.evaluate(X_val, y_val)
     print(f"Validation MSE: {loss:.4f}")
 
-    # Predict on validation and inspect
     preds = model.predict(X_val)
     idx = 0
     plt.plot(y_val[idx], label='True ν*')
@@ -139,12 +144,11 @@ if __name__ == "__main__":
     B = np.array([[0.0], [1.0]])
     Q = np.eye(n)
     R = np.eye(m) * 0.1
-    env = LinearSystem(A, B, T)
 
-    # train the dual network
-    trained_model = train_dual_network(env, Q, R, rho=1.0, num_samples=500)
 
-    r_test = generate_spline_traj(env.T)
-    dual_ascent_with_model(env, Q, R, rho=1.0, xi=env.x0, r_init=r_test, model=trained_model)
+    trained_model = train_dual_network(A, B, Q, R,T, rho=1.0, num_samples=1000)
 
-    # trained_model.save("dual_network_model.h5")
+    # r_test = generate_spline_traj(T)
+    dual_ascent_with_model(A, B, Q, R,T, rho=1.0, model=trained_model)
+
+    trained_model.save("dual_network_model.h5")

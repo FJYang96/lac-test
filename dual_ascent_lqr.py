@@ -1,7 +1,7 @@
 import cvxpy as cp
 import numpy as np
 import matplotlib.pyplot as plt
-from controllers import FiniteHorizonLQR
+from controllers.linear_lqr import *
 from env import LinearSystem
 
 
@@ -24,7 +24,8 @@ def dual_ascent_with_lqr(env, Q, R, rho, xi, ref_true, max_iters=10):
         ref_plus_nu = r + nu
 
         lqr = FiniteHorizonLQR(env, Q, R, ref_plus_nu)
-        x_traj, u_traj, _ = lqr.simulate(xi)
+        
+        x_traj, u_traj, _ = lqr.simulate()
         print(x_traj)
 
         r_var = cp.Variable((T + 1, n))
