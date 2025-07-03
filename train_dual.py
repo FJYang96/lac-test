@@ -11,7 +11,7 @@ from controllers.linear_lqr import FiniteHorizonLQR
 import matplotlib.pyplot as plt
 
 
-def solve_r_subproblem_cvxpy(A, B, Q, R, T, x_traj, nu):
+def solve_r(A, B, Q, R, T, x_traj, nu):
     n = A.shape[0]
     r = cp.Variable((T + 1, n))
 
@@ -38,7 +38,7 @@ def dual_ascent(env, Q, R, rho, xi, r_init, max_iters=8):
         controller = FiniteHorizonLQR(env, Q, R, r_perturbed)
         x_traj, u_traj, _ = controller.simulate()
 
-        r = solve_r_subproblem_cvxpy(env.A, env.B, Q, R, T, x_traj, nu)
+        r = solve_r(env.A, env.B, Q, R, T, x_traj, nu)
 
 
         nu = nu + rho * (x_traj - r)
@@ -49,40 +49,62 @@ def dual_ascent(env, Q, R, rho, xi, r_init, max_iters=8):
 
     return trajs, rs, nus
 
-def dual_ascent_with_model(A, B, Q, R, T, rho, model, max_iters=10):
-    env = LinearSystem(A,B, T)
-    n, T = env.state_space, env.T
-    # r = r_init.copy()
-    trajs, nus, rs = [], [], []
+# def dual_ascent_with_model(A, B, Q, R, T, rho, model, max_iters=1, ref_traj = None):
+#     env = LinearSystem(A,B, T)
+#     n, T = env.state_space, env.T
+#     trajs, nus, rs = [], [], []
+#
+#     controller = FiniteHorizonLQR(env, Q, R)
+#     if ref_traj is None:
+#         r = controller.ref_traj
+#     else:
+#         r = ref_traj
+#     nu = model.predict(r.flatten()[None])[0].reshape(T + 1, n)
+#
+#     x_traj, u_traj, _ = controller.simulate()
+#
+#     r = solve_r(env.A, env.B, Q, R, T, x_traj, nu)
+#     nu = nu + rho * (x_traj - r)
+#     r_perturbed = r + nu
+#
+#     trajs.append(x_traj.copy())
+#     nus.append(nu.copy())
+#     rs.append(r_perturbed.copy())
+#
+#     traj = trajs[-1]
+#     ref = rs[-1]
+#     plt.figure(figsize=(10, 4))
+#     for i in range(n):
+#         plt.plot(traj[:, i], label=f"r[{i}]")
+#         plt.plot(ref[:, i], '--', label=f"r + v[{i}]")
+#     plt.legend()
+#     plt.title("Final Trajectory vs Reference with Predicted ν")
+#     plt.grid(True)
+#     plt.show()
+#
+#     return trajs, rs, nus
 
-    for i in range(max_iters):
-        controller = FiniteHorizonLQR(env, Q, R)
-        r = controller.ref_traj
-        nu = model.predict(r.flatten()[None])[0].reshape(T + 1, n)
-        r_perturbed = r + nu
+def dual_ascent_with_model(A, B, Q, R, T, rho, model, ref_traj):
+    env = LinearSystem(A, B, T)
+    n = env.state_space
 
-        x_traj, u_traj, _ = controller.simulate()
+    r = ref_traj
+    nu = model.predict(r.flatten()[None])[0].reshape(T + 1, n)
 
-        r = solve_r_subproblem_cvxpy(env.A, env.B, Q, R, T, x_traj, nu)
-        x_crop = x_traj[:T] if x_traj.shape[0] > T else x_traj[:T]
-        nu = nu[:T] + rho * (x_crop - r[:T])
+    r_perturbed = r + nu
+    controller = FiniteHorizonLQR(env, Q, R, r_perturbed)
+    x_traj, u_traj, _ = controller.simulate()
 
-        trajs.append(x_traj.copy())
-        nus.append(nu.copy())
-        rs.append(r.copy())
-
-    traj = trajs[-1]
-    ref = rs[-1]
     plt.figure(figsize=(10, 4))
     for i in range(n):
-        plt.plot(traj[:, i], label=f"x[{i}]")
-        plt.plot(ref[:, i], '--', label=f"r[{i}]")
+        plt.plot(x_traj[:, i], label=f"x[{i}]")
+        plt.plot(r_perturbed[:, i], '--', label=f"r + v[{i}]")
     plt.legend()
-    plt.title("Final Trajectory vs Reference with Predicted ν")
+    plt.title("Trajectory with Predicted ν")
     plt.grid(True)
     plt.show()
 
-    return trajs, rs, nus
+    return x_traj, r_perturbed, nu
 
 def generate_dual_data(env, Q, R, rho, num_samples=1000, max_iters=10):
     r_list = []
@@ -148,7 +170,7 @@ if __name__ == "__main__":
 
     trained_model = train_dual_network(A, B, Q, R,T, rho=1.0, num_samples=1000)
 
-    # r_test = generate_spline_traj(T)
-    dual_ascent_with_model(A, B, Q, R,T, rho=1.0, model=trained_model)
+    r_test = generate_spline_traj(T)
+    dual_ascent_with_model(A, B, Q, R,T, rho=1.0, model=trained_model, ref_traj = r_test)
 
-    trained_model.save("dual_network_model.h5")
+    trained_model.save("dual_network_modelnew.h5")

@@ -2,9 +2,11 @@ import gymnasium as gym
 import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
-from env import LinearSystem  
+from env import LinearSystem
 from gymnasium.wrappers import FlattenObservation
 from utils import *
+
+
 class LinearTrackingWrapper(gym.Env):
     def __init__(self, A, B, Q, R, T):
         super().__init__()
@@ -56,12 +58,39 @@ class LinearTrackingWrapper(gym.Env):
             r = np.zeros(self.env.state_space)
         return np.concatenate([self.env.x, r]).astype(np.float32)
 
+
+import matplotlib.pyplot as plt
+
+def plot_trajectory_vs_reference(env, model, T):
+    obs, _ = env.reset()
+    x_traj = []
+    r_traj = []
+
+    for _ in range(T):
+        action, _ = model.predict(obs, deterministic=True)
+        obs, reward, done, _, _ = env.step(action)
+        x_traj.append(env.env.x.copy())
+        r_traj.append(env.ref_traj[env.t - 1])  # previous r_t
+
+    x_traj = np.array(x_traj)
+    r_traj = np.array(r_traj)
+
+    for i in range(env.n):
+        plt.plot(x_traj[:, i], label=f"x[{i}]")
+        plt.plot(r_traj[:, i], '--', label=f"r[{i}]")
+
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
 # Define system
-A = np.array([[2.0, 3], [0, 2.0]])
-B = np.array([[0, 1], [1, 0]])
-Q = np.eye(2)
-R = 0.1 * np.eye(2)
-T = 50
+T = 20
+n = 2
+m = 1
+A = np.array([[1.0, 1.0], [0.0, 1.0]])
+B = np.array([[0.0], [1.0]])
+Q = np.eye(n)
+R = np.eye(m) * 0.1
 
 env = LinearTrackingWrapper(A, B, Q, R, T)
 check_env(env)
@@ -70,7 +99,7 @@ check_env(env)
 
 policy_kwargs = dict(
     net_arch=[dict(pi=[128, 128, 128, 128],
-                   vf=[128, 128, 128])]  # two hidden layers of 128 units each
+                   vf=[64, 64])]
 )
 
 model = PPO(
@@ -79,17 +108,19 @@ model = PPO(
     policy_kwargs=policy_kwargs,
     verbose=1,
     learning_rate=3e-4,
-    batch_size=64,
+    batch_size=32,
     n_epochs=10,
-    gamma=0.99
+    gamma=0.97
 )
 
 model.learn(total_timesteps=50000)
 
-model.save("ppo_linear_tracking")
+model.save("ppo_linear")
 
 obs, _ = env.reset()
 for _ in range(T):
     action, _ = model.predict(obs, deterministic=True)
     obs, reward, done, _, _ = env.step(action)
-    print(f"State: {env.env.x}, Reward: {reward}")
+    print(env.env.x, reward)
+
+plot_trajectory_vs_reference(env,model, T)
